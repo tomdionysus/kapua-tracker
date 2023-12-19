@@ -4,14 +4,13 @@
 #include <iostream>
 #include <thread>
 
-#include "Core.hpp"
-#include "LocalDiscover.hpp"
 #include "Logger.hpp"
-#include "Protocol.hpp"
+#include "Tracker.hpp"
 
 using namespace std;
 
 Kapua::IOStreamLogger* stdlog;
+Kapua::Tracker* tracker;
 
 volatile bool running = true;
 volatile bool stopping = false;
@@ -29,11 +28,13 @@ void signal_stop(int signum) {
 }
 
 void start() {
-  stdlog = new Kapua::IOStreamLogger(&cout, Kapua::LOG_LEVEL_DEBUG);
+  tracker = new Kapua::Tracker(stdlog, 8080);
+  tracker->start();
 }
 
 void stop() {
-  delete config;
+  tracker->stop();
+  delete tracker;
 }
 
 int main() {
