@@ -16,7 +16,13 @@
 #include <map>
 #include <memory>
 
+#include <boost/thread.hpp>
+#include <boost/thread/mutex.hpp>
+#include <boost/thread/condition_variable.hpp>
+
 #include "Logger.hpp"
+
+#define KAPUA_SERVER_STRING "kapua-tracker v0.0.1"
 
 namespace Kapua {
 
@@ -50,6 +56,12 @@ class Tracker {
 
   bool check_rate_limit(const std::string& ip);
   void cleanup_rate_limits();
+
+  // Threading
+      boost::thread _thread;
+    boost::mutex _mutex;
+    boost::condition_variable _cond;
+    bool _running;
 };
 
 };  // namespace Kapua

@@ -15,18 +15,20 @@ include_directories (
 
 add_library(
 	kapua-tracker SHARED 
-
 	src/Logger.cpp
 	src/Tracker.cpp
 )
 
 find_package(LIBYAML REQUIRED)
 include_directories(${LIBYAML_INCLUDE_DIR})
-target_link_libraries(kapua-tracker ${LIBYAML_LIBRARIES})
 
-find_package(Boost 1.83.0 REQUIRED)
-include_directories( ${Boost_INCLUDE_DIR} )
-target_link_libraries(kapua-tracker LINK_PUBLIC ${Boost_LIBRARIES} )
+find_package(Boost 1.83.0 REQUIRED COMPONENTS thread)
+include_directories(${Boost_INCLUDE_DIR})
+
+target_link_libraries(kapua-tracker LINK_PUBLIC
+	${LIBYAML_LIBRARIES}
+	${Boost_LIBRARIES}
+)
 
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)

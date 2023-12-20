@@ -28,15 +28,27 @@ Tracker::Tracker(Logger* logger, uint16_t port) : _io_context(), _acceptor(_io_c
 Tracker::~Tracker() { delete _logger; }
 
 void Tracker::start() {
-  start_accept();
-  _io_context.run();
+    {
+        boost::lock_guard<boost::mutex> lock(_mutex);
+        _running = true;
+    }
+
+    _thread = boost::thread([this]() {
+        start_accept();
+        _io_context.run();
+    });
 }
 
 void Tracker::stop() {
-  _acceptor.close();
-  _io_context.stop();
-}
+    {
+        boost::lock_guard<boost::mutex> lock(_mutex);
+        if (!_running) return;
+        _running = false;
+    }
 
+    _io_context.stop();
+    _thread.join();  // Wait for the thread to finish
+}
 void Tracker::start_accept() {
   auto socket = std::make_shared<boost::asio::ip::tcp::socket>(_io_context);
   _acceptor.async_accept(*socket, [this, socket](const boost::system::error_code& error) {
@@ -78,7 +90,7 @@ void Tracker::handle_http_request(const boost::beast::http::request<boost::beast
 
     auto res = std::make_shared<boost::beast::http::response<boost::beast::http::string_body>>(boost::beast::http::status::too_many_requests, req.version());
 
-    res->set(boost::beast::http::field::server, BOOST_BEAST_VERSION_STRING);
+    res->set(boost::beast::http::field::server, KAPUA_SERVER_STRING);
     res->set(boost::beast::http::field::content_type, "text/plain");
     res->set(boost::beast::http::field::retry_after, "60");  // Retry after 60 seconds
     res->keep_alive(req.keep_alive());
@@ -103,7 +115,7 @@ void Tracker::handle_http_request(const boost::beast::http::request<boost::beast
   // Create the response object on the heap to manage its lifetime
   auto res = std::make_shared<boost::beast::http::response<boost::beast::http::string_body>>(boost::beast::http::status::ok, req.version());
 
-  res->set(boost::beast::http::field::server, "kapua-tracker v0.0.1");
+  res->set(boost::beast::http::field::server, KAPUA_SERVER_STRING);
   res->set(boost::beast::http::field::content_type, "text/plain");
   res->keep_alive(req.keep_alive());
   res->body() = "";
