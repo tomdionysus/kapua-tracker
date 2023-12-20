@@ -25,9 +25,13 @@ include_directories(${LIBYAML_INCLUDE_DIR})
 find_package(Boost 1.83.0 REQUIRED COMPONENTS thread)
 include_directories(${Boost_INCLUDE_DIR})
 
+find_package(nlohmann_json 3.9.0 REQUIRED)
+include_directories(${nlohmann_json_INCLUDE_DIRS})
+
 target_link_libraries(kapua-tracker LINK_PUBLIC
 	${LIBYAML_LIBRARIES}
 	${Boost_LIBRARIES}
+	nlohmann_json::nlohmann_json
 )
 
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)

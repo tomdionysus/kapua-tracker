@@ -10,15 +10,14 @@
 #include <boost/beast/core.hpp>
 #include <boost/beast/http.hpp>
 #include <boost/beast/version.hpp>
+#include <boost/thread.hpp>
+#include <boost/thread/condition_variable.hpp>
+#include <boost/thread/mutex.hpp>
 #include <chrono>
 #include <cstdint>
 #include <iostream>
 #include <map>
 #include <memory>
-
-#include <boost/thread.hpp>
-#include <boost/thread/mutex.hpp>
-#include <boost/thread/condition_variable.hpp>
 
 #include "Logger.hpp"
 
@@ -43,8 +42,13 @@ class Tracker {
   boost::asio::ip::tcp::acceptor _acceptor;
   Logger* _logger;
 
-  // Rate Limiting
+  void write_async_response(const boost::beast::http::request<boost::beast::http::string_body>& req,
+                                   std::shared_ptr<boost::asio::ip::tcp::socket> socket, boost::beast::http::status status, std::string contentType,
+                                   std::string body, std::vector<std::tuple<boost::beast::http::field, std::string>>* headers);
 
+  // void handle_http_json_request(const boost::beast::http::request<boost::beast::http::string_body>& req, std::shared_ptr<boost::asio::ip::tcp::socket> socket);
+
+  // Rate Limiting
   struct RateLimitInfo {
     int count;
     std::chrono::steady_clock::time_point last_request;
@@ -58,10 +62,10 @@ class Tracker {
   void cleanup_rate_limits();
 
   // Threading
-      boost::thread _thread;
-    boost::mutex _mutex;
-    boost::condition_variable _cond;
-    bool _running;
+  boost::thread _thread;
+  boost::mutex _mutex;
+  boost::condition_variable _cond;
+  bool _running;
 };
 
 };  // namespace Kapua

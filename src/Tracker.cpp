@@ -6,15 +6,19 @@
 //
 #include "Tracker.hpp"
 
+#include <iostream>
+#include <memory>
+#include <nlohmann/json.hpp>
+
+using json = nlohmann::json;
+
+#include "Logger.hpp"
+
 using boost::asio::ip::tcp;
 
 using namespace std;
 
 namespace Kapua {
-#include <iostream>
-#include <memory>
-
-#include "Tracker.hpp"
 
 Tracker::Tracker(Logger* logger, uint16_t port) : _io_context(), _acceptor(_io_context) {
   _logger = new ScopedLogger("HTTP", logger);
@@ -28,27 +32,28 @@ Tracker::Tracker(Logger* logger, uint16_t port) : _io_context(), _acceptor(_io_c
 Tracker::~Tracker() { delete _logger; }
 
 void Tracker::start() {
-    {
-        boost::lock_guard<boost::mutex> lock(_mutex);
-        _running = true;
-    }
+  {
+    boost::lock_guard<boost::mutex> lock(_mutex);
+    _running = true;
+  }
 
-    _thread = boost::thread([this]() {
-        start_accept();
-        _io_context.run();
-    });
+  _thread = boost::thread([this]() {
+    start_accept();
+    _io_context.run();
+  });
 }
 
 void Tracker::stop() {
-    {
-        boost::lock_guard<boost::mutex> lock(_mutex);
-        if (!_running) return;
-        _running = false;
-    }
+  {
+    boost::lock_guard<boost::mutex> lock(_mutex);
+    if (!_running) return;
+    _running = false;
+  }
 
-    _io_context.stop();
-    _thread.join();  // Wait for the thread to finish
+  _io_context.stop();
+  _thread.join();  // Wait for the thread to finish
 }
+
 void Tracker::start_accept() {
   auto socket = std::make_shared<boost::asio::ip::tcp::socket>(_io_context);
   _acceptor.async_accept(*socket, [this, socket](const boost::system::error_code& error) {
@@ -88,20 +93,12 @@ void Tracker::handle_http_request(const boost::beast::http::request<boost::beast
   if (!check_rate_limit(ip)) {
     _logger->debug(ip + " Exceeded rate limit");
 
-    auto res = std::make_shared<boost::beast::http::response<boost::beast::http::string_body>>(boost::beast::http::status::too_many_requests, req.version());
+    std::vector<std::tuple<boost::beast::http::field, std::string>> headers;
 
-    res->set(boost::beast::http::field::server, KAPUA_SERVER_STRING);
-    res->set(boost::beast::http::field::content_type, "text/plain");
-    res->set(boost::beast::http::field::retry_after, "60");  // Retry after 60 seconds
-    res->keep_alive(req.keep_alive());
-    res->body() = "";
-    res->content_length(0);
+    // Assuming you have added some tuples to 'headers'
+    headers.emplace_back(boost::beast::http::field::retry_after, "60");
 
-    boost::beast::http::async_write(*socket, *res, [this, socket, res](boost::beast::error_code ec, std::size_t) {
-      if (ec) {
-        _logger->error("Write failed: " + ec.message());
-      }
-    });
+    write_async_response(req, socket, boost::beast::http::status::too_many_requests, "text/plain", "Rate Limit Exceeded", &headers);
     return;
   }
 
@@ -112,14 +109,26 @@ void Tracker::handle_http_request(const boost::beast::http::request<boost::beast
 
   _logger->info(ip + ":" + std::to_string(port) + " " + method + " " + std::string(req.target()));
 
+  write_async_response(req, socket, boost::beast::http::status::ok, "text/plain", "", nullptr);
+}
+
+void Tracker::write_async_response(const boost::beast::http::request<boost::beast::http::string_body>& req,
+                                   std::shared_ptr<boost::asio::ip::tcp::socket> socket, boost::beast::http::status status, std::string contentType,
+                                   std::string body, std::vector<std::tuple<boost::beast::http::field, std::string>>* headers) {
   // Create the response object on the heap to manage its lifetime
-  auto res = std::make_shared<boost::beast::http::response<boost::beast::http::string_body>>(boost::beast::http::status::ok, req.version());
+  auto res = std::make_shared<boost::beast::http::response<boost::beast::http::string_body>>(status, req.version());
 
   res->set(boost::beast::http::field::server, KAPUA_SERVER_STRING);
-  res->set(boost::beast::http::field::content_type, "text/plain");
+  res->set(boost::beast::http::field::content_type, contentType);
+  if(headers) {
+    for (const auto& header : *headers) {
+      res->set(std::get<0>(header), std::get<1>(header));
+    }
+  }
+  //   // Retry after 60 seconds
   res->keep_alive(req.keep_alive());
-  res->body() = "";
-  res->content_length(0);
+  res->body() = body;
+  res->prepare_payload();
 
   boost::beast::http::async_write(*socket, *res, [this, socket, res](boost::beast::error_code ec, std::size_t) {
     if (ec) {

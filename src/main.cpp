@@ -40,6 +40,9 @@ void stop() {
 int main() {
   stdlog = new Kapua::IOStreamLogger(&cout, Kapua::LOG_LEVEL_DEBUG);
 
+  stdlog->info("kapua Server v0.0.1");
+  stdlog->info("-------------------");
+
   stdlog->debug("Starting...");
   start();
   stdlog->info("Started");
