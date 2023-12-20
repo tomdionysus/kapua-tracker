@@ -81,9 +81,9 @@ void Tracker::handle_http_request(const boost::beast::http::request<boost::beast
     res->set(boost::beast::http::field::server, BOOST_BEAST_VERSION_STRING);
     res->set(boost::beast::http::field::content_type, "text/plain");
     res->set(boost::beast::http::field::retry_after, "60");  // Retry after 60 seconds
-  res->keep_alive(req.keep_alive());
-  res->body() = "";
-  res->content_length(0);
+    res->keep_alive(req.keep_alive());
+    res->body() = "";
+    res->content_length(0);
 
     boost::beast::http::async_write(*socket, *res, [this, socket, res](boost::beast::error_code ec, std::size_t) {
       if (ec) {
