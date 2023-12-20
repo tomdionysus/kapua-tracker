@@ -10,8 +10,10 @@
 #include <boost/beast/core.hpp>
 #include <boost/beast/http.hpp>
 #include <boost/beast/version.hpp>
+#include <chrono>
 #include <cstdint>
 #include <iostream>
+#include <map>
 #include <memory>
 
 #include "Logger.hpp"
@@ -34,6 +36,20 @@ class Tracker {
   boost::asio::io_context _io_context;
   boost::asio::ip::tcp::acceptor _acceptor;
   Logger* _logger;
+
+  // Rate Limiting
+
+  struct RateLimitInfo {
+    int count;
+    std::chrono::steady_clock::time_point last_request;
+  };
+
+  std::map<std::string, RateLimitInfo> rate_limit_map;
+  const int rate_limit_threshold = 100;                                       // Example limit
+  const std::chrono::seconds rate_limit_interval = std::chrono::seconds(60);  // Reset interval
+
+  bool check_rate_limit(const std::string& ip);
+  void cleanup_rate_limits();
 };
 
 };  // namespace Kapua

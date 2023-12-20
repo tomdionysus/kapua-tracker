@@ -1,0 +1,16 @@
+#!/bin/bash
+
+# The URL of your server
+URL="http://localhost:8080"
+
+# Number of requests to send
+REQUEST_COUNT=200
+
+# Send requests in a loop
+for (( i=1; i<=REQUEST_COUNT; i++ ))
+do
+    echo "Request $i"
+    curl -s -o /dev/null -w "%{http_code}\n" "$URL"
+    # Optional: sleep 1 to avoid spamming too quickly
+    # sleep 1
+done

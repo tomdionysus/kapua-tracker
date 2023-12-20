@@ -73,6 +73,26 @@ void Tracker::handle_http_request(const boost::beast::http::request<boost::beast
   std::string ip = remote_ad.to_string();
   unsigned short port = remote_ep.port();
 
+  if (!check_rate_limit(ip)) {
+    _logger->debug(ip + " Exceeded rate limit");
+
+    auto res = std::make_shared<boost::beast::http::response<boost::beast::http::string_body>>(boost::beast::http::status::too_many_requests, req.version());
+
+    res->set(boost::beast::http::field::server, BOOST_BEAST_VERSION_STRING);
+    res->set(boost::beast::http::field::content_type, "text/plain");
+    res->set(boost::beast::http::field::retry_after, "60");  // Retry after 60 seconds
+  res->keep_alive(req.keep_alive());
+  res->body() = "";
+  res->content_length(0);
+
+    boost::beast::http::async_write(*socket, *res, [this, socket, res](boost::beast::error_code ec, std::size_t) {
+      if (ec) {
+        _logger->error("Write failed: " + ec.message());
+      }
+    });
+    return;
+  }
+
   // Access the method, headers, and body from the request
   std::string method = req.method_string();
   const auto& headers = req.base();
@@ -83,17 +103,44 @@ void Tracker::handle_http_request(const boost::beast::http::request<boost::beast
   // Create the response object on the heap to manage its lifetime
   auto res = std::make_shared<boost::beast::http::response<boost::beast::http::string_body>>(boost::beast::http::status::ok, req.version());
 
-  res->set(boost::beast::http::field::server, BOOST_BEAST_VERSION_STRING);
+  res->set(boost::beast::http::field::server, "kapua-tracker v0.0.1");
   res->set(boost::beast::http::field::content_type, "text/plain");
-  res->content_length(body.size());
   res->keep_alive(req.keep_alive());
   res->body() = "";
+  res->content_length(0);
 
   boost::beast::http::async_write(*socket, *res, [this, socket, res](boost::beast::error_code ec, std::size_t) {
     if (ec) {
       _logger->error("Write failed: " + ec.message());
     }
   });
+}
+
+bool Tracker::check_rate_limit(const std::string& ip) {
+  auto now = std::chrono::steady_clock::now();
+  auto& info = rate_limit_map[ip];
+
+  if (now - info.last_request > rate_limit_interval) {
+    info.count = 0;
+    info.last_request = now;
+  }
+
+  if (++info.count > rate_limit_threshold) {
+    return false;  // Rate limit exceeded
+  }
+
+  return true;  // Within rate limit
+}
+
+void Tracker::cleanup_rate_limits() {
+  auto now = std::chrono::steady_clock::now();
+  for (auto it = rate_limit_map.begin(); it != rate_limit_map.end();) {
+    if (now - it->second.last_request > rate_limit_interval) {
+      it = rate_limit_map.erase(it);
+    } else {
+      ++it;
+    }
+  }
 }
 
 }  // namespace Kapua
