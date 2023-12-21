@@ -23,60 +23,142 @@ Database::~Database() {
 int Database::addNode(uint64_t id, sockaddr_in ipv4, uint16_t port) {
     std::lock_guard<std::mutex> lock(mutex);
 
-    char query[256];
+    const char *query = "INSERT INTO node (id, ip4, port, last_registration) VALUES (?, ?, ?, NOW()) ON DUPLICATE KEY UPDATE ip4=?, port=?, last_registration=NOW()";
+
+    MYSQL_STMT *stmt = mysql_stmt_init(&mysql);
+    if (!stmt) {
+        _logger->error("MySQL stmt init error");
+        return -1; // Or appropriate error code
+    }
+
+    if (mysql_stmt_prepare(stmt, query, strlen(query))) {
+        _logger->error("MySQL stmt prepare error: " + std::string(mysql_stmt_error(stmt)));
+        mysql_stmt_close(stmt);
+        return -1; // Or appropriate error code
+    }
+
+    MYSQL_BIND bind[5];
+    memset(bind, 0, sizeof(bind));
+
     char ipv4_str[INET_ADDRSTRLEN];
     inet_ntop(AF_INET, &(ipv4.sin_addr), ipv4_str, INET_ADDRSTRLEN);
 
-    snprintf(query, sizeof(query), 
-             "INSERT INTO node (id, ip4, port, last_registration) VALUES (%llu, '%s', %u, NOW()) ON DUPLICATE KEY UPDATE ip4='%s', port=%u, last_registration=NOW()",
-             id, ipv4_str, port, ipv4_str, port);
+    // Bind parameters
+    bind[0].buffer_type = MYSQL_TYPE_LONGLONG;
+    bind[0].buffer = (char *)&id;
+    bind[1].buffer_type = MYSQL_TYPE_STRING;
+    bind[1].buffer = ipv4_str;
+    bind[1].buffer_length = strlen(ipv4_str);
+    bind[2].buffer_type = MYSQL_TYPE_SHORT;
+    bind[2].buffer = (char *)&port;
+    bind[3].buffer_type = MYSQL_TYPE_STRING;
+    bind[3].buffer = ipv4_str;
+    bind[3].buffer_length = strlen(ipv4_str);
+    bind[4].buffer_type = MYSQL_TYPE_SHORT;
+    bind[4].buffer = (char *)&port;
 
-    if (mysql_query(&mysql, query)) {
-        _logger->error("MySQL query error: " + std::string(mysql_error(&mysql)));
-        return mysql_errno(&mysql);
+    if (mysql_stmt_bind_param(stmt, bind)) {
+        _logger->error("MySQL stmt bind param error: " + std::string(mysql_stmt_error(stmt)));
+        mysql_stmt_close(stmt);
+        return -1; // Or appropriate error code
+    }
+
+    if (mysql_stmt_execute(stmt)) {
+        _logger->error("MySQL stmt execute error: " + std::string(mysql_stmt_error(stmt)));
+        mysql_stmt_close(stmt);
+        return -1; // Or appropriate error code
     }
 
     _logger->info("Node added or updated successfully");
+    mysql_stmt_close(stmt);
     return 0; // Success
 }
 
 int Database::getNode(uint64_t id, Node* node) {
     std::lock_guard<std::mutex> lock(mutex);
 
-    char query[128];
-    snprintf(query, sizeof(query), "SELECT id, ip4, port FROM node WHERE id = %llu", id);
+    const char *query = "SELECT id, ip4, port FROM node WHERE id = ?";
 
-    if (mysql_query(&mysql, query)) {
-        _logger->error("MySQL query error: " + std::string(mysql_error(&mysql)));
-        return mysql_errno(&mysql);
+    MYSQL_STMT *stmt = mysql_stmt_init(&mysql);
+    if (!stmt) {
+        _logger->error("MySQL stmt init error");
+        return -1;
     }
 
-    MYSQL_RES *result = mysql_store_result(&mysql);
-    if (!result) {
-        _logger->error("MySQL result error");
-        return mysql_errno(&mysql);
+    if (mysql_stmt_prepare(stmt, query, strlen(query))) {
+        _logger->error("MySQL stmt prepare error: " + std::string(mysql_stmt_error(stmt)));
+        mysql_stmt_close(stmt);
+        return -1;
     }
 
-    if (mysql_num_rows(result) == 0) {
-        mysql_free_result(result);
+    MYSQL_BIND bind[1];
+    memset(bind, 0, sizeof(bind));
+
+    // Bind parameter
+    bind[0].buffer_type = MYSQL_TYPE_LONGLONG;
+    bind[0].buffer = (char *)&id;
+
+    if (mysql_stmt_bind_param(stmt, bind)) {
+        _logger->error("MySQL stmt bind param error: " + std::string(mysql_stmt_error(stmt)));
+        mysql_stmt_close(stmt);
+        return -1;
+    }
+
+    if (mysql_stmt_execute(stmt)) {
+        _logger->error("MySQL stmt execute error: " + std::string(mysql_stmt_error(stmt)));
+        mysql_stmt_close(stmt);
+        return -1;
+    }
+
+    MYSQL_BIND bind_out[3];
+    memset(bind_out, 0, sizeof(bind_out));
+    uint64_t out_id;
+    char out_ip4[INET_ADDRSTRLEN];
+    uint16_t out_port;
+
+    bind_out[0].buffer_type = MYSQL_TYPE_LONGLONG;
+    bind_out[0].buffer = (char *)&out_id;
+    bind_out[1].buffer_type = MYSQL_TYPE_STRING;
+    bind_out[1].buffer = out_ip4;
+    bind_out[1].buffer_length = INET_ADDRSTRLEN;
+    bind_out[2].buffer_type = MYSQL_TYPE_SHORT;
+    bind_out[2].buffer = (char *)&out_port;
+
+    if (mysql_stmt_bind_result(stmt, bind_out)) {
+        _logger->error("MySQL stmt bind result error: " + std::string(mysql_stmt_error(stmt)));
+        mysql_stmt_close(stmt);
+        return -1;
+    }
+
+    if (mysql_stmt_store_result(stmt)) {
+        _logger->error("MySQL stmt store result error: " + std::string(mysql_stmt_error(stmt)));
+        mysql_stmt_close(stmt);
+        return -1;
+    }
+
+    if (mysql_stmt_num_rows(stmt) == 0) {
         _logger->warn("Node not found");
+        mysql_stmt_free_result(stmt);
+        mysql_stmt_close(stmt);
         return -1; // Node not found
     }
 
-    MYSQL_ROW row = mysql_fetch_row(result);
-    if (!row) {
-        mysql_free_result(result);
-        _logger->error("Error in fetching row");
+    if (mysql_stmt_fetch(stmt)) {
+        _logger->error("MySQL stmt fetch error: " + std::string(mysql_stmt_error(stmt)));
+        mysql_stmt_free_result(stmt);
+        mysql_stmt_close(stmt);
         return -1; // Error in fetching row
     }
 
-    node->id = id;
-    inet_pton(AF_INET, row[1], &(node->ipv4.sin_addr));
-    node->port = static_cast<uint16_t>(atoi(row[2]));
+    node->id = out_id;
+    inet_pton(AF_INET, out_ip4, &(node->ipv4.sin_addr));
+    node->port = out_port;
 
-    mysql_free_result(result);
+    mysql_stmt_free_result(stmt);
+    mysql_stmt_close(stmt);
     _logger->debug("Node retrieved successfully");
     return 0; // Success
 }
+
 
 } // namespace Kapua
