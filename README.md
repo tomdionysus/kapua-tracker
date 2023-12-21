@@ -9,6 +9,8 @@ A HTTP JSON API for tracking and discovering [kapua](https://github.com/tomdiony
 - [cmake](https://github.com/Kitware/CMake)
 - [libyaml](https://github.com/yaml/libyaml)
 - [boost](https://github.com/boostorg/boost)
+- [mysql](https://github.com/mysql/mysql-server)
+- [nlohmann_json](https://github.com/nlohmann/json)
 
 **Debain/Ubuntu/etc**
 
@@ -19,7 +21,7 @@ apt-get install cmake libyaml libboost-all-dev
 **MacOS**
 
 ```sh
-brew install libyaml boost
+brew install libyaml boost nlohmann_json mysql-client
 ```
 
 ### Build
